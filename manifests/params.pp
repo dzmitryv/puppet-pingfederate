@@ -28,6 +28,9 @@ class pingfederate::params {
   $windowslive_package_ensure          = 'installed'
   $service_name                        = 'pingfederate'
   $service_ensure                      = true
+  $log_retain_days                     = 30
+  $log_levels                          = []
+  $log_files                           = []
   $license_content                     = undef
   $license_file                        = undef
   $owner                               = 'pingfederate'
@@ -72,13 +75,16 @@ class pingfederate::params {
   $saml2_local_entityID                = "${facts['hostname']}-ping:urn:saml2"
   $saml1_local_issuerID                = "${facts['hostname']}-ping:urn:saml1"
   $wsfed_local_realm                   = "${facts['hostname']}-ping:urn:wsfed"
+  $http_forwarded_for_header           = undef
+  $http_forwarded_host_header          = undef
   $saml2_sp_auth_policy_name           = undef
   $saml2_sp_auth_policy_core_attrs     = ['subject']
   $saml2_sp_auth_policy_extd_attrs     = []
   $saml2_idp_url                       = undef
-  $saml2_idp_entityID                  = 'idp/shibboleth'
   $saml2_idp_post                      = 'idp/profile/SAML2/POST/SSO'
   $saml2_idp_redirect                  = 'idp/profile/SAML2/Redirect/SSO'
+  $saml2_idp_name                      = undef
+  $saml2_idp_entityID                  = undef
   $saml2_idp_contact                   = {'firstName' => '', 'lastName' => '', 'email' => ''}
   $saml2_idp_profiles                  = ['SP_INITIATED_SSO']
   $saml2_idp_id_mapping                = 'ACCOUNT_MAPPING'
@@ -107,9 +113,13 @@ class pingfederate::params {
   $oauth_jdbc_jar                      = undef
   $oauth_jdbc_validate                 = undef
   $oauth_jdbc_create_cmd               = undef
-  $oauth_jdbc_ddl_cmd                  = undef
+  $oauth_jdbc_client_ddl_cmd           = undef
+  $oauth_jdbc_access_ddl_cmd           = undef
+  $acct_jdbc_linking_ddl_cmd           = undef
   $oauth_client_mgr_user               = 'clientmgr'
   $oauth_client_mgr_pass               = 'ProviderP@55'
+  $oauth_svc_scopes                    = []
+  $oauth_svc_scope_groups              = []
   $oauth_svc_grant_core_attrs          = ['USER_KEY','USER_NAME']
   $oauth_svc_grant_extd_attrs          = []
   $oauth_svc_acc_tok_mgr_id            = undef

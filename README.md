@@ -6,7 +6,21 @@
 1. [Setup - The basics of getting started with pingfederate](#setup)
     * [Beginning with pingfederate](#beginning-with-pingfederate)
 1. [Usage - Configuration options and additional functionality](#usage)
-1. [Reference - An under-the-hood peek at what the module is doing and how](#reference)
+  1. [Packaging](#packaging)
+  1. [Service](#service)
+  1. [License Key](#providing_the_license_key)
+  1. [Run.properties](#runproperties)
+  1. [Administration](#administration)
+  1. [Cross-Origin Resource Sharing (CORS)](#cross-origin-resource-sharing-cors)
+  1. [OGNL expressions](#ognl-expressions)
+  1. [SAML 2.0 SP Configuration](#saml-20-sp-configuration)
+  1. [SAML 2.0 Partner IdP Configuration](#saml-20-partner-idp-configuration)
+  1. [OAuth JDBC configuration](#oauth-jdbc-configuration)
+  1. [OAuth client manager](#oauth-client-manager)
+  1. [OAuth server settings](#oauth-server-settings)
+  1. [OAuth Access Token Managers](#oauth-access-token-managers)
+  1. [OAuth OpenID Connect Policy Contracts](#oauth-openid-connect-policy-contracts)
+  1. [Social Identity Adapters](#social-identity-adapters)
 1. [Limitations - OS compatibility, etc.](#limitations)
 1. [Development - Guide for contributing to the module](#development)
 
@@ -29,23 +43,21 @@ manual steps.
 The module installs PingFederate and performs basic static configuration of the
 server, that is, things that are changed prior to starting it up. These include the 
 `run.properties` and various configuration XML files, and installation of the license key.
-Future versions will include more advanced administrative configuraton, that is, things that
-you configure once the basic system is up and running.
-
-In addition, the beginnings of support for configuring post-startup features via the administrative
-REST API are in place, specifically for configuring JDBC datastores.
+More advanced administrative configuraton is also done to the point of being able to
+build a completely configuration-as-code PingFederate instance that does real work.
 
 If you have access to the RPMs (custom-built; not distributed by PingIdentity),
 this module will install them, if not, install it the usual way by downloading and unzipping; you can still
 use this module to manage the configuration.
 
-### Basic Usage with RPMS available
+### Basic Usage
+#### with RPMS available
 This example will only work if you use Hiera to override the default parameters.
 ```
 include pingfederate
 ```
 
-### Basic Usage without RPMS
+#### without RPMS
 Install PingFederate per the [installation manual](https://documentation.pingidentity.com/pingfederate/pf82/index.shtml#gettingStartedGuide/concept/gettingStarted.html) and disable RPM installation:
 ```
   class {'pingfederate':
@@ -54,13 +66,9 @@ Install PingFederate per the [installation manual](https://documentation.pingide
   }
 ```
 
-## Reference
-
 ### Parameters
-Using most of the defaults will just work to get the basic server installed and running. You will have to supply
-the license key file via a secure manner (e.g. via hiera).
-
-You will need to explicitly enable and configure the various social identity plugins.
+Using most of the defaults will just work to get the basic server installed and running. However, it will not do a heck of a lot. You'll need
+to set a number of the following parameters.
 
 #### Packaging
 ##### `install_dir`
@@ -111,8 +119,54 @@ You will need to explicitly enable and configure the various social identity plu
   (string) Service name. Default: `'pingfederate'`
 
 ##### `service_ensure`
-  (boolean).
-  Ensure it is running. Default: `true`
+  (string).
+  Ensure it is running. Values are the same as those used by the
+  [service resource](https://docs.puppet.com/puppet/latest/types/service.html#service-attribute-ensure).
+  Default: `true`
+
+#### Logging
+##### `log_retain_days`
+  (integer) Number of days to retain log files. Default: `30`
+
+##### `log_files`
+  (Array[map]) List of log4j RollingFile overrides. Map keys:
+  - name: name of the logger
+  - fileName: log file name.
+  - filePattern: pattern for the rotated log file name
+
+  Default: []
+
+  Example:
+  ```
+  pingfederate::log_files:
+    - name: FILE
+      fileName: 'server.log'
+      filePattern: 'server.log.%i'
+    - name: SamlTransaction
+      fileName: 'transaction.log'
+      filePattern: 'transaction.log.%i'
+    - name: SecurityAudit2File
+      fileName: 'audit.log
+      filePattern: 'audit.log.%i'
+  ```
+  Hint: add extra keys to this map for your own purposes. For example, `sumo: true` might be
+  used to flag this file for ingestion into sumologic (configured in your local profile module).
+
+##### `log_levels`
+  (Array[map]) List of log4j log level overrides. Map elements:
+  - name: name of the logger
+  - level: log level (`DEBUG`, `INFO`, etc.)
+
+  Default: []
+
+  Example:
+  ```
+  pingfederate::log_levels:
+    - name: org.sourceid
+	  level: DEBUG
+	- name: com.pingidentity.appserver.jetty
+	  level: DEBUG
+  ```
 
 #### Providing the License Key
 PingFederate is commercial licensed software and will not operate without a license key.
@@ -231,7 +285,7 @@ for an explanation. The defaults are as distributed by PingIdentity.
   (integer) Default `7601`
   
 ##### `cluster_tcp_discovery_initial_hosts`
-  (array[string]) No default.
+  (array[string]) No default. Note that the `cluster_bind_port` must be the same on the other hosts as this one.
   
 ##### `cluster_diagnostics_enabled`
   (boolean) Default: `false`
@@ -242,25 +296,48 @@ for an explanation. The defaults are as distributed by PingIdentity.
 ##### `cluster_diagnostics_port`
   (integer) Default `7500`
 
+#### Cross-Origin Resource Sharing (CORS)
+CORS needs to be enabled as otherwise Javascript Oauth clients will throw an XHR error
+when attempting [XMLHttpRequest (XHR)](https://en.wikipedia.org/wiki/XMLHttpRequest).
+
+##### `cors_allowedOrigins`
+  (string)
+  Allowed origins for CORS. Default `*`
+
+##### `cors_allowedMethods`
+  (string)
+  Allowed HTTP methods for CORS. Default `GET,OPTIONS,POST`
+  
+##### `cors_filter_mapping`
+  (string)
+  Allowed URL filter mappings for CORS. Default `/*`
+
+#### OGNL expressions
+##### `ognl_expressions_enable`
+  (boolean)
+  Enable [OGNL](https://en.wikipedia.org/wiki/OGNL) scripting. Default `true`
+
 #### Administration
 
 ##### `adm_user`
-  (string) Initial administrator user. Default: `'Administrator'`
+  (string) Initial administrator user. Default: `'Administrator'` (and seems to be required).
 
 ##### `adm_pass`
-  (string) Administrator user's password. Default: `'p@Ssw0rd'`
+  (string) Administrator user's password. The `adm_pass` and `adm_hash`
+  must match. Default: `'p@Ssw0rd'` 
 
 ##### `adm_hash`
   (string) Hash of administrator user's password. Must match the password. (*I don't
-  currently know how to generate this, so make sure to copy it wheh you change
-  the passowrd*)
+  currently know how to generate this, so make sure to copy it when you change
+  the password*)
 
 ##### `adm_api_baseURL`
   (string) Base URL of the pf-admin-api.
   Default: `"https://${facts['fqdn']}:${admin_https_port}/pf-admin-api/v1"`
 
 ##### `service_api_baseURL`
-  (string) Base URL for the various services.
+  (string) Base URL for the various services. Set this to your load-balancer's URL.
+
   Default: `"https://${facts['fqdn']}:${https_port}"`
   
 #### Native SAML2 IdP
@@ -280,37 +357,144 @@ These are the native SAML2 IdP settings used for native *console_authentication*
 ##### `wsfed_local_realm`
   (string) Default: `"${facts['hostname']}-ping:urn:wsfed"`
 
-#### Cross-Origin Resource Sharing (CORS)
-CORS needs to be enabled as otherwise Javascript Oauth clients will throw an XHR error
-when attempting XMLHttpRequest (XHR).
+##### `http_forwarded_for_header`
+  (string) HTTP header identifying the IP address of the end-host when coming in via proxy.
+  You should set these if using a load-balancer, otherwise the source IP address logged will
+  be that of the load-balancer rather than the actual client.
+  Default: undefined. Example: `X-Forwarded-For`
 
-##### `cors_allowedOrigins`
-  (string)
-  Allowed origins for CORS. Default `*`
+##### `http_forwarded_host_header`
+  (string) HTTP header identifying the name of the end-host when coming in via proxy.
+  Default: undefined. Example: `X-Forwarded-Host`
 
-##### `cors_allowedMethods`
-  (string)
-  Allowed HTTP methods for CORS. Default `GET,OPTIONS,POST`
-  
-##### `cors_filter_mapping`
-  (string)
-  Allowed URL filter mappings for CORS. Default `/*`
+#### SAML 2.0 SP Configuration
+  N.B. The current capability of this module is to configure PingFederate as an SP so as to
+  federate a SAML 2.0 IdP for purposes of the OAuth 2.0 authorization code flow. 
+##### Authentication Policy Contracts
+###### `saml2_sp_auth_policy_name` (string)
+###### `saml2_sp_auth_policy_core_attrs` (Array[string])
+###### `saml2_sp_auth_policy_extd_attrs` (Array[string])
 
-#### OGNL expressions
-##### `ognl_expressions_enable`
-  (boolean)
-  Enable OGNL scripting. Default `true`
+#### SAML 2.0 Partner IdP Configuration
+  Currently only a single partner IdP can be configure by this module.
+##### `saml2_idp_url`
+  (string)
+  URL for the SAML2 IDP. For example: `https://shibboleth.example.com`
+
+##### `saml2_idp_post`
+  (string)
+  URL-portion for the POST method. Concatenated to the `saml2_idp_url`. Default: `idp/profile/SAML2/POST/SSO`
+
+##### `saml2_idp_redirect`
+  (string)
+  URL-portion for the redirect. Concatenated to the `saml2_idp_url`. Default: `idp/profile/SAML2/Redirect/SSO`
+
+##### `saml2_idp_entityID`
+  (string)
+  Entity ID for the SAML2 IDP. For example: `urn:mace:incommon:example.com` or `https://shibboleth.example.com/idp/shibboleth`
+
+##### `saml2_idp_name`
+  (string)
+  User-friendly name for the IdP. Displayed in the authentication selector screen.
+
+##### `saml2_idp_contact`
+  (map)
+  Contact info for the IdP operator. Default: `{'firstName' => '', 'lastName' => '', 'email' => ''}`
+
+##### `saml2_idp_profiles`
+  (Array[string])
+  List of allowed SAML2 IdP profiles. Default: `['SP_INITIATED_SSO']`
+
+##### `saml2_idp_id_mapping`
+  (string)
+  How IdP gets mapped (RTFM). Default: `'ACCOUNT_MAPPING'`
+
+##### `saml2_idp_core_attrs`
+  (Array[string])
+  List of core attributes. Default: `['SAML_SUBJECT']`
+
+##### `saml2_idp_extd_attrs`
+  (Array[string])
+  List of extended attributes. Default: `[]`
+
+##### `saml2_idp_attr_map`
+  (Array[map])
+  List of attribute mappings with keys _name_, _type_, _value_. Default: `[]`
+  Example: 
+  ```
+  pingfederate::saml2_idp_attr_map:
+    - name: pingAffiliation
+      type: EXPRESSION
+      value: >-
+		#result = #this.get(\"urn:oid:1.3.6.1.4.1.5923.1.1.1.1.9\"),
+		#result = (#result? #result.toString() : \"\")
+		.replace(\"[\", \"[\\\"\")
+		.replace(\"]\", \"\\\"]\")
+		.replace(\",\", \"\\\",\\\"\")
+		.replace(\" \", \"\")
+	- name: subject
+	  type: ASSERTION
+	  value: SAML_SUBJECT
+  ```
+
+##### `saml2_idp_oauth_map`
+  (Array[map])
+  List of attribute mappings from SAML2 to Oauth with keys _name_, _type_, _value_. Default: `[]`
+  Example:
+  ```
+  pingfederate::saml2_idp_oauth_map:
+	- name: USER_KEY
+	  type: ASSERTION
+	  value: SAML_SUBJECT
+	- name: USER_NAME
+	  type: ASSERTION
+	  value: SAML_SUBJECT
+  ```
+
+##### `saml2_idp_cert_file`
+  (string)
+  File path to IdP certificate. NOT IMPLEMENTED.
+
+##### `saml2_idp_cert_content`
+  (string)
+  String containing IdP certificate. Example:
+  ```
+  pingfederate::saml2_idp_cert_content: |
+	-----BEGIN CERTIFICATE-----
+	MIIDRzCCAi+gAwIBAgIUAb+rsLUvjwiVA2iVgiHAFGrtCPgwDQYJKoZIhvcNAQEF
+	BQAwIjEgMB4GA1UEAxMXc2hpYmJvbGV0aC5jb2x1bWJpYS5lZHUwHhcNMTMwODIy
+	MTQ1MzUzWhcNMzMwODIyMTQ1MzUzWjAiMSAwHgYDVQQDExdzaGliYm9sZXRoLmNv
+    ...
+	-----END CERTIFICATE-----
+  ```
+
+##### `saml2_oauth_token_map`
+  (Array[map])
+  Mapping of OAuth attributes to fields in the access token(?). Example:
+  ```
+  pingfederate::saml2_oauth_token_map:
+	- name: username
+	  type: OAUTH_PERSISTENT_GRANT
+	  value: USER_KEY
+	- name: group
+	  type: OAUTH_PERSISTENT_GRANT
+	  value: group
+	- name: uid
+	  type: OAUTH_PERSISTENT_GRANT
+	  value: USER_KEY
+  ```
 
 #### OAuth JDBC configuration
-To enable use of an external JDBC database, set *oauth_jdbc_type* to a value (see below).
+To enable use of an external JDBC data store, set *oauth_jdbc_type* to a value (see below).
 If it is `undef` then the default internal XML-based datastore will be used.
 
 ##### `oauth_jdbc_type`
-  Type of JDBC
+  (string) Type of JDBC
   [OAuth Client Datastore](https://documentation.pingidentity.com/pingfederate/pf82/index.shtml#concept_definingOauthClientDataStore.html)
   connector. One of `undef`, `mysql`,`sqlserver`,`oracle`,`other`. Default: `undef`. If `other`, you'll need to fill in the following as well.
-  Otherwise they default to expected values for the given *oauth_jdbc_type* but can still be used to override the defaults.
-  
+  Otherwise they default to expected values for the given *oauth_jdbc_type* but can still be used to override the defaults. 
+  N.B. currently only fully implemented for `mysql`.
+
 ##### `oauth_jdbc_db`
   (string)
   JDBC database name (also found in `oauth_jdbc_url`)
@@ -376,9 +560,19 @@ If it is `undef` then the default internal XML-based datastore will be used.
   Command to execute to create the database schema.
   Set based on the *oauth_jdbc_type*
 
-##### `oauth_jdbc_ddl_cmd`
+##### `oauth_jdbc_client_ddl_cmd`
   (string)
-  Command to execute to initialize the database schema.
+  Command to execute to initialize the OAuth Client Manager database schema.
+  Set based on the *oauth_jdbc_type*
+
+##### `oauth_jdbc_access_ddl_cmd`
+  (string)
+  Command to execute to initialize the OAuth Access database schema.
+  Set based on the *oauth_jdbc_type*
+
+##### `acct_jdbc_linking_ddl_cmd`
+  (string)
+  Command to execute to initialize the Account Linking database schema.
   Set based on the *oauth_jdbc_type*
 
 #### OAuth client manager
@@ -411,6 +605,36 @@ Notice: /Stage[main]/Pingfederate::Server_settings/Exec[pf-admin-api POST ${pcv}
 Notice: /Stage[main]/Pingfederate::Server_settings/Exec[pf-admin-api POST ${pcv}]/returns: }
   ```
 #### OAuth server settings
+##### `oauth_svc_scopes`
+  (array of hashes) Allowable OAuth scopes. Each hash has the following keys:
+  - name: (string) scope name 
+  - description: (string) descriptive text that is displayed to the user for authorization_code flow.
+  Here's an example in a Hiera YAML file:
+
+  ```yaml
+  pingfederate::oauth_svc_scopes:
+    - name: read
+      description: Can read stuff
+    - name: write
+      description: Can write stuff
+  ```
+
+##### `oauth_svc_scope_groups`
+  (array of hashes) Groupings of OAuth scopes. Each hash has the following keys:
+  - name: (string) scope group name 
+  - description: (string) descriptive text that is displayed to the user for authorization_code flow.
+  - scopes: (array[string]) Names of scopes defined in `oauth_svc_scopes`.
+  Here's an example in a Hiera YAML file:
+
+  ```yaml
+  pingfederate::oauth_svc_scope_groups:
+    - name: readwrite
+      description: Can read and write stuff
+      scopes:
+	    - read
+	    - write
+  ```
+
 ##### `oauth_svc_grant_core_attrs`
   (array[string])
   Oauth server persistent grant contract core attributes. Default: `['USER_KEY','USER_NAME']`
@@ -523,14 +747,38 @@ Notice: /Stage[main]/Pingfederate::Server_settings/Exec[pf-admin-api POST ${pcv}
 
 ## Limitations
 
+### Operating System Support
+
 This has only been tested on EL 6 with Java 1.8. It might work elsewhere. Let me know!
+
+### Known Issues
+
+Changes to certain configuration variables after an initial Puppet run 
+do not properly get reflected in the PingFederate server state. The best way
+to resolve these is to wipe PingFederate off the system and re-run Puppet:
+```
+$ sudo service pingfederate stop
+$ sudo yum -y erase pingfederate-server
+$ sudo rm -rf /opt/pingfederate*
+$ sudo puppet agent -t ...
+```
+
+Known issues include:
+- Changing `pingfederate::service_api_baseURL` does not properly remove references to the old URL.
+- Setting a social media adapter like `pingfederate::facebook_adapter: true` and then setting it
+`false` fails to properly remove the adapter references.
+- A failed JDBC connection at initial configuration (e.g. database not running or no permission)
+will not get fixed later, even if the database access is fixed.
+- If you set some `pingfederate::log_levels` and then remove them, the last settings remain;
+original values are not restored.
 
 ## Development
 
 The package was built to use PingFederate as an OAuth2 Server with SAML and social identity federation for the
 authorization code flow. PingFederate has many other features which are not yet configured here. 
 
-Please fork and submit PRs on [github](https://github.com/n2ygk/puppet-pingfederate) as you add features.
+Please fork and submit PRs on [github](https://github.com/n2ygk/puppet-pingfederate) as you add
+fixes and features.
 
 ### Using Augeas to edit XML configuration files
 

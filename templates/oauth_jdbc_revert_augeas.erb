@@ -5,19 +5,15 @@
 # remove the no-longer relevant datastore pf-admin-api file.
 rm -f <%= @install_dir -%>/local/etc/dataStores.json
 
-augtool -A -r <%= @install_dir -%>/server/default/conf/META-INF <<EoF
-set /augeas/load/Xml/lens Xml.lns
-set /augeas/load/Xml/incl hivemodule.xml
-load
-set /files/hivemodule.xml/module/service-point[#attribute/id="ClientManager"][#attribute/interface="org.sourceid.oauth20.domain.ClientManager"]/invoke-factory/construct/#attribute/class "org.sourceid.oauth20.domain.ClientManagerXmlFileImpl"
-save
-EoF
-
 augtool -A -r <%= @install_dir -%>/server/default/data/config-store <<EoF
 set /augeas/load/Xml/lens Xml.lns
-set /augeas/load/Xml/incl org.sourceid.oauth20.domain.ClientManagerJdbcImpl.xml
+set /augeas/load/Xml/incl[1] org.sourceid.oauth20.domain.ClientManagerJdbcImpl.xml
+set /augeas/load/Xml/incl[2] org.sourceid.oauth20.token.AccessGrantManagerJdbcImpl.xml
+set /augeas/load/Xml/incl[3] org.sourceid.saml20.service.impl.AccountLinkingServiceDBImpl.xml
 load
 set /files/org.sourceid.oauth20.domain.ClientManagerJdbcImpl.xml/c:config/c:item[#attribute/name="PingFederateDSJNDIName"]/#text "PFDefaultDS"
+set /files/org.sourceid.oauth20.token.AccessGrantManagerJdbcImpl.xml/c:config/c:item[#attribute/name="PingFederateDSJNDIName"]/#text "PFDefaultDS"
+set /files/org.sourceid.saml20.service.impl.AccountLinkingServiceDBImpl.xml/c:config/c:item[#attribute/name="PingFederateDSJNDIName"]/#text "PFDefaultDS"
 save
 EoF
 

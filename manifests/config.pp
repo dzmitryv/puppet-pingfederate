@@ -4,19 +4,18 @@
 # license key, etc. that can be installed prior to starting the server.
 # Additional configuration happens after the server is running. See pingfederarte::admin.
 class pingfederate::config inherits ::pingfederate {
-  # apparently the augeas-1.4 Properties.lens doesn't work!
-  # this throws a parser error:
-  # augeas{'run.properties':
-  #   lens    => 'Properties.lns',
-  #   incl    => "$::pingfederate::install_dir/bin/run.properties",
-  #   changes => ['set "abc.def" "2345"']
-  #}
-
-  # use inifile for this and augeas for the XML files
   $defaults = {'path' => "${::pingfederate::install_dir}/bin/run.properties"}
-  # this Java properties file has no sections so the section name is ''
+  # The syntax required is for each list element is "hostname[port]".
+  # The "right" way to get the port would be to use exported resources... For now, just use our value.
+  if $::pingfederate::cluster_tcp_discovery_initial_hosts {
+    $dharray = $::pingfederate::cluster_tcp_discovery_initial_hosts.map |$i| { "${i}[${::pingfederate::cluster_bind_port}]" }
+    $dhstring = join($dharray,',')
+  }
+  else {
+    $dhstring = undef
+  }
   $settings = {
-    '' => {
+    '' => { # this Java properties file has no sections so the section name is ''
       'pf.admin.https.port'                    => $::pingfederate::admin_https_port,
       'pf.admin.hostname'                      => $::pingfederate::admin_hostname,
       'pf.console.bind.address'                => $::pingfederate::console_bind_address,
@@ -42,7 +41,7 @@ class pingfederate::config inherits ::pingfederate {
       'pf.cluster.transport.protocol'          => $::pingfederate::cluster_transport_protocol,
       'pf.cluster.mcast.group.address'         => $::pingfederate::cluster_mcast_group_address,
       'pf.cluster.mcast.group.port'            => $::pingfederate::cluster_mcast_group_port,
-      'pf.cluster.tcp.discovery.initial.hosts' => $::pingfederate::cluster_tcp_discovery_initial_hosts,
+      'pf.cluster.tcp.discovery.initial.hosts' => $dhstring,
       'pf.cluster.diagnostics.enabled'         => $::pingfederate::cluster_diagnostics_enabled,
       'pf.cluster.diagnostics.addr'            => $::pingfederate::cluster_diagnostics_addr,
       'pf.cluster.diagnostics.port'            => $::pingfederate::cluster_diagnostics_port,
@@ -112,22 +111,11 @@ class pingfederate::config inherits ::pingfederate {
                 'set adm:administrative-users/adm:user/adm:password-change-required/#text "false"']
   }
 
-  # create local built-in SAML2 IdP so the adm_user can login
-  # N.B. This stuff gets changed when pf-admin-api calls are used to configured SPs and IdPs.
-  # Make sure you sync up all the attributes.
+  # Create local built-in SAML2 IdP so the adm_user can login
+  # N.B. This stuff gets changed when pf-admin-api calls are used to configured SPs and IdPs which can lead to
+  # thrashing each time puppet runs if the exact same values are not synchronized.
+  # XXX Don't configure this if CLUSTERED_ENGINE since this gets pushed from the CLUSTERED_CONSOLE???
   $saml_file = "$::pingfederate::install_dir/server/default/data/sourceid-saml2-local-metadata.xml"
-  # XXX or, just don't manage these fields via Augeas!
-  # $EnableWsFedSP = 'true' if ${::pingfederate::wsfed_local_realm} else 'false'
-  # if $::pingfederate::saml2_local_entityID {
-  #   $EnableSaml20IdP = 'true'
-  #   $EnableSaml20Sp = 'true'
-  # }
-  # if $::pingfederate::saml1_local_issuerID {  
-  #   $EnableSaml11Rp = "true"
-  #   $EnableSaml10Rp = 'true'
-  #   $EnableSpWsTrustSts = 'true'
-  #   $EnableIdpDynaFed = 'true'
-  # }
   augeas{$saml_file:
     lens    => 'Xml.lns',
     incl    => $saml_file,
@@ -140,48 +128,9 @@ class pingfederate::config inherits ::pingfederate {
      "set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/DynaFedID \"${::pingfederate::service_api_baseURL}\"",
      "set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/Saml1xId \"${::pingfederate::saml1_local_issuerID}\"",
      "set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/WsFedID \"${::pingfederate::wsfed_local_realm}\"",
+     "set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/CustomGlobalHttpHeaderName \"${::pingfederate::http_forwarded_for_header}\"",
+     "set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/ForwardedHostHeaderName \"${::pingfederate::http_forwarded_host_header}\"",
      ]
-    # XXX don't set things that get changed from elsewhere and the defaults are fine.
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/Saml1xSrcId ""',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/EnableWsFedIdP "false"',
-     # "set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/EnableWsFedSp \"${EnableWsFedSP}\"",
-     # "set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/EnableSaml20IdP \"${EnableSaml20IdP}\"",
-     # "set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/EnableSaml20Sp  \"${EnableSaml20Sp}\"",
-     # "set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/EnableSaml11Rp \"${EnableSaml11Rp}\"",
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/EnableSaml11Ap "false"',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/EnableSaml10Rp "false"',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/EnableSaml10Ap "false"',
-     # "set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/EnableSpWsTrustSts \"${EnableSpWsTrustSts}\"",
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/EnableInboundProvisioning "false"',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/EnableIdpWsTrustSts "false"',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/EnableX509Discovery "false"',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/EnableIdpDiscovery "false"',
-     # "set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/EnableIdpDynaFed \"${EnableIdpDynaFed\"",
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/EnableSpDynaFed "false"',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/DisableAutomaticConnectionValidation "false"',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/DataStoreValidationInterval "300"',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/CustomGlobalHttpHeaderName ""',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/ClientIpHeaderIndex "last"',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/ForwardedHostHeaderName ""',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/ForwardedHostHeaderIndex "last"',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/ProxyTerminatesHttpsConns "false"',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/MetadataSigningKeyAlias ""',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/MetadataSigningAlgorithm ""',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/MetadataSigningKeyMD5Fingerprint ""',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/ConfirmIdpSlo "false"',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/ClientCertSSLHeaderName ""',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/ClientCertChainSSLHeaderName ""',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/#attribute/EnableOIDCSp "false"',
-     # 'clear EntityDescriptor/Extensions/sid:SourceIDExtension/sid:ApplicationURLs',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/sid:IdpDiscovery/#attribute/CommonDomainServer "false"',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/sid:IdpDiscovery/#attribute/IdPCommonDomainClient "false"',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/sid:IdpDiscovery/#attribute/SPCommonDomainClient "false"',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/sid:IdpDiscovery/#attribute/WriteCookiePath "/writecookie.cdc"',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/sid:IdpDiscovery/#attribute/ReadCookiePath "/readcookie.cdc"',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/sid:IdpDiscovery/sid:CommonDomainClient/#attribute/CommonDomainServiceBaseUrl ""',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/sid:IdpDiscovery/sid:CommonDomainService/#attribute/CommonDomain ""',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/sid:IdpDiscovery/sid:CommonDomainService/#attribute/CookieLifeDays "365"',
-     # 'set EntityDescriptor/Extensions/sid:SourceIDExtension/sid:ErrPageMsg/#text "errorDetail.idpSsoFailure"']
   }
 
   # enable OGNL expressions
@@ -211,5 +160,154 @@ class pingfederate::config inherits ::pingfederate {
                     "set web-app/filter-mapping/url-pattern/#text \"${::pingfederate::cors_filter_mapping}\""]
       }
   }
-                
+
+  # configure JDBC implementation
+  $hive_file = "$::pingfederate::install_dir/server/default/conf/META-INF/hivemodule.xml"
+  if $::pingfederate::oauth_jdbc_type {
+    augeas{$hive_file:
+      lens    => 'Xml.lns',
+      incl    => $hive_file,
+      context => "/files/${hive_file}",
+      changes => ['set module/service-point[#attribute/id="ClientManager"][#attribute/interface="org.sourceid.oauth20.domain.ClientManager"]/invoke-factory/construct/#attribute/class "org.sourceid.oauth20.domain.ClientManagerJdbcImpl']
+    }
+  }
+  else {                        # (revert JDBC back to) XML file implementation
+    augeas{$hive_file:
+      lens    => 'Xml.lns',
+      incl    => $hive_file,
+      context => "/files/${hive_file}",
+      changes => ['set module/service-point[#attribute/id="ClientManager"][#attribute/interface="org.sourceid.oauth20.domain.ClientManager"]/invoke-factory/construct/#attribute/class "org.sourceid.oauth20.domain.ClientManagerXmlFileImpl"']
+    }
+  }
+
+  # Configure log4j2 and Jetty to set logging levels.
+  # Want to set logfile rollover to daily with file retention to $log_retain_days.
+
+  # This is all highly dependent on how PingFederate delivers their log4j2.xml file.
+  # <Configuration ...>
+  #     <Appenders>
+  #         <RollingFile name="FILE" fileName="${sys:pf.log.dir}/server.log"
+  #                      filePattern="${sys:pf.log.dir}/server.log.%i" ignoreExceptions="false">
+  #             <PatternLayout>
+  #                 <!-- Uncomment this if you want to use UTF-8 encoding instead
+  #                     of system's default encoding.
+  #                 <charset>UTF-8</charset> -->
+  #                 <pattern>%d %X{trackingid} %-5p [%c] %m%n</pattern>
+  #             </PatternLayout>
+  #             <Policies>
+  #                 <SizeBasedTriggeringPolicy
+  #                         size="10000 KB" />
+  #             </Policies>
+  #             <DefaultRolloverStrategy max="5" />
+  #         </RollingFile>
+  #         <!-- ... -->
+  #     </Appenders>
+  #     <!-- ... -->
+  #     <Loggers>
+  #         <Logger name="httpclient.wire.content" level="INFO" />
+  #         <Logger name="com.pingidentity.pf.email" level="INFO" />
+  #         <Logger name="org.sourceid" level="DEBUG" />
+  #         <!-- ... -->
+  #     </Loggers>
+  #     <!-- ... -->
+  # </Configuration>
+
+  # log level settings. List of maps keyed by name and level.
+  $log4_loggers = $::pingfederate::log_levels.map |$i| {
+    "set Configuration/Loggers/Logger[#attribute/name=\"${i['name']}\"]/#attribute/level ${i['level']}"
+  }
+
+  # List of RollingFile settings to override. Set each to daily rollover and retain $log_retain_days copies
+  # List of maps keyed by name, fileName, filePattern.
+  # Sets the fileName, filePattern, removes any extant Policies, adds daily CronTriggeringPolicy and max retension days.
+  $log4_rollers = $::pingfederate::log_files.map |$i| {
+    [
+     "set Configuration/Appenders/RollingFile[#attribute/name=\"${i['name']}\"]/#attribute/fileName \${sys:pf.log.dir}/${i['fileName']}",
+     "set Configuration/Appenders/RollingFile[#attribute/name=\"${i['name']}\"]/#attribute/filePattern \${sys:pf.log.dir}/${i['filePattern']}",
+     "rm Configuration/Appenders/RollingFile[#attribute/name=\"${i['name']}\"]/Policies",
+     "set Configuration/Appenders/RollingFile[#attribute/name=\"${i['name']}\"]/CronTriggeringPolicy/#attribute/schedule \"0 0 0 * * ?\"",
+     "set Configuration/Appenders/RollingFile[#attribute/name=\"${i['name']}\"]/DefaultRolloverStrategy/#attribute/max ${::pingfederate::log_retain_days}"
+    ]
+  }
+
+  $log4_do = flatten($log4_loggers) + flatten($log4_rollers)
+  $log4_file = "$::pingfederate::install_dir/server/default/conf/log4j2.xml"
+  augeas{$log4_file:
+    lens    => 'Xml.lns',
+    incl    => $log4_file,
+    context => "/files/${log4_file}",
+    changes => $log4_do,
+  }
+
+  # Jetty files
+  # here's a really ugly nested XML doc!
+  # <Configure id="AdminServer" class="org.eclipse.jetty.server.Server">
+  #     <Set name="handler">
+  #         <New id="Handlers" class="org.eclipse.jetty.server.handler.HandlerCollection">
+  #             <Set name="handlers">
+  #                 <Array type="org.eclipse.jetty.server.Handler">
+  #                     <Item>
+  #                         <New id="Contexts" class="org.eclipse.jetty.server.handler.ContextHandlerCollection"/>
+  #                     </Item>
+  #                     <Item>
+  #                         <New id="RequestLog" class="org.eclipse.jetty.server.handler.RequestLogHandler">
+  #                               <Set name="requestLog">
+  #                                 <New id="RequestLogImpl" class="org.eclipse.jetty.server.NCSARequestLog">
+  #                                        <Set name="filename"><SystemProperty name="pf.log.dir" default="."/>/yyyy_mm_dd.request2.log</Set>
+  #                                        <Set name="filenameDateFormat">yyyy_MM_dd</Set>
+  #                                        <Set name="retainDays">90</Set>
+  #                                        <Set name="append">true</Set>
+  #                                        <Set name="extended">true</Set>
+  #                                        <Set name="logCookies">false</Set>
+  #                                        <Set name="LogTimeZone">GMT</Set>
+  #                                 </New>
+  #                               </Set>
+  #                         </New>
+  #                     </Item>
+  #                 </Array>
+  #             </Set>
+  #         </New>
+  #     </Set>
+  # </Configure>
+
+  # And an ulgy here document so the string can be split up into somewhat readable text:
+  $adm_cfg = @(EoF/L)
+  Configure[#attribute/id="AdminServer"]\
+  /Set[#attribute/name="handler"]\
+  /New[#attribute/id="Handlers"]\
+  /Set[#attribute/name="handlers"]\
+  /Array[#attribute/type="org.eclipse.jetty.server.Handler"]\
+  /Item\
+  /New[#attribute/id="RequestLog"]\
+  /Set[#attribute/name="requestLog"]\
+  /New[#attribute/id="RequestLogImpl"]\
+  /Set[#attribute/name="retainDays"]/#text
+  |-EoF
+  $jetty_adm_file = "$::pingfederate::install_dir/etc/jetty-admin.xml"
+  augeas{$jetty_adm_file:
+    lens    => 'Xml.lns',
+    incl    => $jetty_adm_file,
+    context => "/files/${jetty_adm_file}",
+    changes => [ "set ${adm_cfg} ${::pingfederate::log_retain_days}" ]
+  }
+  # now do the same for the runtime file
+  $run_cfg = @(EoF/L)
+  Configure[#attribute/id="RuntimeServer"]\
+  /Set[#attribute/name="handler"]\
+  /New[#attribute/id="Handlers"]\
+  /Set[#attribute/name="handlers"]\
+  /Array[#attribute/type="org.eclipse.jetty.server.Handler"]\
+  /Item\
+  /New[#attribute/id="RequestLog"]\
+  /Set[#attribute/name="requestLog"]\
+  /New[#attribute/id="RequestLogImpl"]\
+  /Set[#attribute/name="retainDays"]/#text
+  |-EoF
+  $jetty_run_file = "$::pingfederate::install_dir/etc/jetty-runtime.xml"
+  augeas{$jetty_run_file:
+    lens    => 'Xml.lns',
+    incl    => $jetty_run_file,
+    context => "/files/${jetty_run_file}",
+    changes => [ "set ${run_cfg} ${::pingfederate::log_retain_days}" ]
+  }
 }

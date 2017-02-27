@@ -30,6 +30,10 @@ class pingfederate (
   # ensure the service is up
   $service_name                        = $::pingfederate::params::service_name,
   $service_ensure                      = $::pingfederate::params::service_ensure,
+  # log4j2 logging:
+  $log_retain_days                     = $::pingfederate::params::log_retain_days,
+  $log_files                           = $::pingfederate::params::log_files,
+  $log_levels                          = $::pingfederate::params::log_levels,
   # license key file: provide either the content or source file URL
   $license_content                     = $::pingfederate::params::license_content,
   $license_file                        = $::pingfederate::params::license_file,
@@ -75,15 +79,18 @@ class pingfederate (
   $saml2_local_entityID                = $::pingfederate::params::saml2_local_entityID,
   $saml1_local_issuerID                = $::pingfederate::params::saml1_local_issuerID,
   $wsfed_local_realm                   = $::pingfederate::params::wsfed_local_realm,
+  $http_forwarded_for_header           = $::pingfederate::params::http_forwarded_for_header,
+  $http_forwarded_host_header          = $::pingfederate::params::http_forwarded_host_header,
   # API: authenticationPolicyContracts (SAML2 SP configuration)
   $saml2_sp_auth_policy_name           = $::pingfederate::params::saml2_sp_auth_policy_name,
   $saml2_sp_auth_policy_core_attrs     = $::pingfederate::params::saml2_sp_auth_policy_core_attrs,
   $saml2_sp_auth_policy_extd_attrs     = $::pingfederate::params::saml2_sp_auth_policy_extd_attrs,
   # API: sp/idpConnections (SAML2 partner IdP)
   $saml2_idp_url                       = $::pingfederate::params::saml2_idp_url,
-  $saml2_idp_entityID                  = $::pingfederate::params::saml2_idp_entityID,
   $saml2_idp_post                      = $::pingfederate::params::saml2_idp_post,
   $saml2_idp_redirect                  = $::pingfederate::params::saml2_idp_redirect,
+  $saml2_idp_entityID                  = $::pingfederate::params::saml2_idp_entityID,
+  $saml2_idp_name                      = $::pingfederate::params::saml2_idp_name,
   $saml2_idp_contact                   = $::pingfederate::params::saml2_idp_contact,
   $saml2_idp_profiles                  = $::pingfederate::params::saml2_idp_profiles,
   $saml2_idp_id_mapping                = $::pingfederate::params::saml2_idp_id_mapping,
@@ -92,7 +99,7 @@ class pingfederate (
   $saml2_idp_attr_map                  = $::pingfederate::params::saml2_idp_attr_map,
   $saml2_idp_oauth_map                 = $::pingfederate::params::saml2_idp_oauth_map,
   $saml2_idp_cert_file                 = $::pingfederate::params::saml2_idp_cert_file,
-  $saml2_idp_cert_content                  = $::pingfederate::params::saml2_idp_cert_content,
+  $saml2_idp_cert_content              = $::pingfederate::params::saml2_idp_cert_content,
   $saml2_oauth_token_map               = $::pingfederate::params::saml2_oauth_token_map,
   # XML: etc/webdefault.xml (Enable Cross-Origin Resource Sharing -- CORS)
   $cors_allowedOrigins                 = $::pingfederate::params::cors_allowedOrigins,
@@ -116,10 +123,14 @@ class pingfederate (
   $oauth_jdbc_validate                 = $::pingfederate::params::oauth_jdbc_validate,
   $oauth_jdbc_create_cmd               = $::pingfederate::params::oauth_jdbc_create_cmd,
   $oauth_jdbc_ddl_cmd                  = $::pingfederate::params::oauth_jdbc_ddl_cmd,
+  # drag in acct linking datastore while we are at it...
+  $acct_jdbc_linking_ddl_cmd           = $::pingfederate::params::acct_jdbc_linking_ddl_cmd,
   # API: passwordCredentialValidators (for OAuth client manager)
   $oauth_client_mgr_user               = $::pingfederate::params::oauth_client_mgr_user,
   $oauth_client_mgr_pass               = $::pingfederate::params::oauth_client_mgr_pass,
   # API: oauth/authServerSettings
+  $oauth_svc_scopes                    = $::pingfederate::params::oauth_svc_scopes,
+  $oauth_svc_scope_groups              = $::pingfederate::params::oauth_svc_scope_groups,
   $oauth_svc_grant_core_attrs          = $::pingfederate::params::oauth_svc_grant_core_attrs,
   $oauth_svc_grant_extd_attrs          = $::pingfederate::params::oauth_svc_grant_extd_attrs,
   # API: oauth/accessTokenManagers
@@ -174,7 +185,9 @@ class pingfederate (
     validate_string($cluster_auth_pwd)
   }
   # Example: host1[7600],10.0.1.4[7600],host7[1033],10.0.9.45[2231] 
-  validate_string($cluster_tcp_discovery_initial_hosts)
+  if $cluster_tcp_discovery_initial_hosts {
+    validate_array($cluster_tcp_discovery_initial_hosts)
+  }
   validate_ip_address($console_bind_address)
   validate_integer($admin_https_port,65535,1)
   validate_integer($http_port,65535,-1)
@@ -182,11 +195,17 @@ class pingfederate (
   validate_integer($secondary_https_port,65535,-1)
 
   # Setup the OAuth JDBC settings, if requested (oauth_jdbc_type is defined)
+  # Do this for both oauth client management and access grants in the same database (MYSQL example shown):
+  # .../server/default/conf/oauth-client-management/sql-scripts/oauth-client-management-mysql.sql
+  # .../server/default/conf/access-grant/sql-scripts/access-grant-*-mysql.sql (2 scripts!)
+  # .../server/default/conf/account-linking/sql-scripts/account-linking-mysql.sql
   # If overriding settings are not provided, the defaults are filled in based on the type.
   if $::pingfederate::oauth_jdbc_type {
     validate_re($oauth_jdbc_type,['^mysql$','^sqlserver$','^oracle$','^other$'])
     # The following defaults based on database type (mysql, mssql, oracle) can still be overidden.
-    $script_dir = "${::pingfederate::install_dir}/server/default/conf/oauth-client-management/sql-scripts/"
+    $oauth_client_script_dir = "${::pingfederate::install_dir}/server/default/conf/oauth-client-management/sql-scripts/"
+    $oauth_access_script_dir = "${::pingfederate::install_dir}/server/default/conf/access-grant/sql-scripts/"
+    $acct_linking_script_dir = "${::pingfederate::install_dir}/server/default/conf/account-linking/sql-scripts/"
     case $::pingfederate::oauth_jdbc_type {
       'mysql': {
         $def_pkgs     = ['mysql','mysql-connector-java']
@@ -196,7 +215,10 @@ class pingfederate (
         $def_driver   = 'com.mysql.jdbc.Driver'
         $portstr      = if $::pingfederate::oauth_jdbc_port { ":${::pingfederate::oauth_jdbc_port}" } else { '' }
         $def_url      = "jdbc:mysql://${oauth_jdbc_host}${portstr}/${oauth_jdbc_db}"
-        $script       = 'oauth-client-management-mysql.sql'
+        $oauth_client_script = 'oauth-client-management-mysql.sql'
+        $oauth_access_script1 = 'access-grant-mysql.sql'
+        $oauth_access_script2 = 'access-grant-attribute-mysql.sql'
+        $acct_linking_script = 'account-linking-mysql.sql'
         $def_create   = "/usr/bin/mysqladmin --wait                    \
                          --connect_timeout=30                          \
                          --host=${::pingfederate::oauth_jdbc_host}     \
@@ -205,13 +227,31 @@ class pingfederate (
                          --password=\"${::pingfederate::oauth_jdbc_pass}\" \
                          create ${::pingfederate::oauth_jdbc_db}       \
                          | /bin/awk '/database exists/{exit 0}/./{exit 1}' " # allow database exists error or no output
-        $def_cmd      = "/usr/bin/mysql --wait --connect_timeout=30    \
+        $def_oauth_client_cmd      = "/usr/bin/mysql --wait --connect_timeout=30    \
                          --host=${::pingfederate::oauth_jdbc_host}     \
                          --port=${::pingfederate::oauth_jdbc_port}     \
                          --user=${::pingfederate::oauth_jdbc_user}     \
                          --password=\"${::pingfederate::oauth_jdbc_pass}\" \
                          --database=${::pingfederate::oauth_jdbc_db}   \
-                         < ${script_dir}/${script}                     \
+                         < ${oauth_client_script_dir}/${oauth_client_script} \
+                         | /bin/awk '/ERROR 1050/{exit 0}/./{exit 1}'  " # allow 1050 (table already exists) or no output
+        # kludge to deal with a back-level mysql < 5.6
+        $def_oauth_access_cmd      = "/bin/cat ${oauth_access_script_dir}/${oauth_access_script1} ${oauth_access_script_dir}/${oauth_access_script2} \
+                         | /bin/sed -e 's/default CURRENT_TIMESTAMP//' \
+                         | /usr/bin/mysql --wait --connect_timeout=30  \
+                         --host=${::pingfederate::oauth_jdbc_host}     \
+                         --port=${::pingfederate::oauth_jdbc_port}     \
+                         --user=${::pingfederate::oauth_jdbc_user}     \
+                         --password=\"${::pingfederate::oauth_jdbc_pass}\" \
+                         --database=${::pingfederate::oauth_jdbc_db}   \
+                         | /bin/awk '/ERROR 1050/{exit 0}/./{exit 1}'  " # allow 1050 (table already exists) or no output
+        $def_acct_linking_cmd      = "/usr/bin/mysql --wait --connect_timeout=30    \
+                         --host=${::pingfederate::oauth_jdbc_host}     \
+                         --port=${::pingfederate::oauth_jdbc_port}     \
+                         --user=${::pingfederate::oauth_jdbc_user}     \
+                         --password=\"${::pingfederate::oauth_jdbc_pass}\" \
+                         --database=${::pingfederate::oauth_jdbc_db}   \
+                         < ${acct_linking_script_dir}/${acct_linking_script} \
                          | /bin/awk '/ERROR 1050/{exit 0}/./{exit 1}'  " # allow 1050 (table already exists) or no output
       }
       'sqlserver': {
@@ -230,7 +270,9 @@ class pingfederate (
         $def_driver   = undef
         $def_url      = undef
         $def_create   = undef
-        $def_cmd      = undef
+        $def_oauth_client_cmd      = undef
+        $def_oauth_access_cmd      = undef
+        $def_acct_linking_cmd      = undef
       }
       default: { fail("Don't know to configure for database type ${::pingfederate::oauth_jdbc_type}.") }
     }
@@ -243,7 +285,9 @@ class pingfederate (
     $o_driver   = if $::pingfederate::oauth_jdbc_driver { $::pingfederate::oauth_jdbc_driver } else { $def_driver }
     $o_url      = if $::pingfederate::oauth_jdbc_url { $::pingfederate::oauth_jdbc_url } else { $def_url }
     $o_create   = if $::pingfederate::oauth_jdbc_create_cmd { $::pingfederate::oauth_jdbc_create_cmd } else { $def_create }
-    $o_cmd      = if $::pingfederate::oauth_jdbc_ddl_cmd { $::pingfederate::oauth_jdbc_ddl_cmd } else { $def_cmd }
+    $o_c_cmd    = if $::pingfederate::oauth_jdbc_client_ddl_cmd { $::pingfederate::oauth_jdbc_client_ddl_cmd } else { $def_oauth_client_cmd }
+    $o_a_cmd    = if $::pingfederate::oauth_jdbc_access_ddl_cmd { $::pingfederate::oauth_jdbc_ddl_access_cmd } else { $def_oauth_access_cmd }
+    $a_l_cmd    = if $::pingfederate::acct_jdbc_linking_ddl_cmd { $::pingfederate::acct_jdbc_ddl_linking_cmd } else { $def_acct_linking_cmd }
   }
 
   # need to do more validation...
